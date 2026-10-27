@@ -397,9 +397,29 @@
           style="display:none; margin-top:6px; background:none; border:1px solid var(--border); border-radius:6px; color:var(--text-muted); font-size:0.82rem; padding:4px 10px; cursor:pointer;"
           onclick="loadMcVersions()">↺ Retry</button>
       </div>
+      <div class="form-group"></div>
       <div class="form-group">
-        <label for="loader">Mod Loader</label>
-        <select id="loader">
+        <label for="loader_1">Mod Loader</label>
+        <select id="loader_1">
+          <option value="fabric">Fabric</option>
+          <option value="forge">Forge</option>
+          <option value="quilt">Quilt</option>
+          <option value="neoforge">NeoForge</option>
+          <option value="liteloader">LiteLoader</option>
+          <option value="modloader">ModLoader</option>
+          <option value="paper">Paper</option>
+          <option value="bungeecord">BungeeCord</option>
+          <option value="folia">Folia</option>
+          <option value="purpur">Purpur</option>
+          <option value="spigot">Spigot</option>
+          <option value="velocity">Velocity</option>
+          <option value="waterfall">Waterfall</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="loader_2">Alternative mod loader</label>
+        <select id="loader_2">
+          <option value="">None</option>
           <option value="fabric">Fabric</option>
           <option value="forge">Forge</option>
           <option value="quilt">Quilt</option>
@@ -607,6 +627,7 @@
     // For non-mod types (resourcepack, shader, datapack) we skip the loader check
     // because those project types use their own loader tags (e.g. "iris", "datapack").
     function getLatestVersion(versions, mcVersion, loader, ignoreLoader = false, preferStable = true) {
+      if (!loader) return null;
       const matching = versions.filter(v =>
         v.game_versions.includes(mcVersion) &&
         (ignoreLoader || v.loaders.map(l => l.toLowerCase()).includes(loader.toLowerCase()))
@@ -636,7 +657,7 @@
      * Download one project (and its required dependencies) into the JSZip instance.
      * Returns 'ok' | 'skip' | 'error'
      */
-    async function downloadMod(modId, mcVersion, loader, preferStable = true, isDep = false, parentId = null) {
+    async function downloadMod(modId, mcVersion, loaders, preferStable = true, isDep = false, parentId = null) {
       if (processedMods.has(modId)) return 'skip';
       processedMods.add(modId);
 
@@ -690,10 +711,16 @@
       }
 
       const ignoreLoader = LOADER_AGNOSTIC_TYPES.has(projectType);
-      const latest = getLatestVersion(versions, mcVersion, loader, ignoreLoader, preferStable);
+      const parentNote = isDep && parentId ? ` [required by ${parentId}]` : '';
+      let latest, loader;
+      for (loader of loaders) {
+        latest = getLatestVersion(versions, mcVersion, loader, ignoreLoader, preferStable);
+        if (latest) { break }
+        if (ignoreLoader) { break }
+        log(`${prefix}NOT FOUND: No ${mcVersion} + ${loader} version for ${display}${parentNote}`, 'log-error');
+      }
+
       if (!latest) {
-        const parentNote = isDep && parentId ? ` [required by ${parentId}]` : '';
-        log(`${prefix}NOT FOUND: No ${mcVersion} + ${ignoreLoader ? 'any loader' : loader} version for ${display}${parentNote}`, 'log-error');
         stats.err++;
         failedMods.push(display);
         return 'error';
@@ -705,7 +732,7 @@
         if (!processedMods.has(dep.project_id)) {
           stats.total++;
           updateStats();
-          await downloadMod(dep.project_id, mcVersion, loader, preferStable, true, modId);
+          await downloadMod(dep.project_id, mcVersion, [loader], preferStable, true, modId);
           stats.done++;
           updateStats();
         }
@@ -766,7 +793,10 @@
     async function startDownload() {
       const collectionRaw = document.getElementById('collection-input').value.trim();
       const mcVersion = document.getElementById('mc-version').value.trim();
-      const loader = document.getElementById('loader').value;
+      const loaders = [
+        document.getElementById('loader_1').value,
+        document.getElementById('loader_2').value,
+      ];
       const preferStable = document.getElementById('prefer-stable')?.checked ?? true;
       const formError = document.getElementById('form-error');
 
@@ -818,12 +848,12 @@
 
         stats.total = projectIds.length;
         const channelDesc = preferStable ? ' (prefer stable)' : ' (newest overall)';
-        titleEl.textContent = `Downloading ${projectIds.length} mod(s) for MC ${mcVersion} + ${loader}${channelDesc}…`;
+        titleEl.textContent = `Downloading ${projectIds.length} mod(s) for MC ${mcVersion} + ${loaders}${channelDesc}…`;
         updateStats();
 
         // Download mods sequentially to keep API request rate reasonable
         for (const modId of projectIds) {
-          await downloadMod(modId, mcVersion, loader, preferStable, false, null);
+          let status = await downloadMod(modId, mcVersion, loaders, preferStable, false, null);
           stats.done++;
           updateStats();
         }
